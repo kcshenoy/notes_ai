@@ -3,27 +3,25 @@ import streamlit_authenticator as stauth
 import re
 import datetime
 import os
-from dotenv import load_dotenv
+from dotenv import main
 from deta import Deta
 import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
-load_dotenv()
+main.load_dotenv()
 
-DETA_KEY = 'b0r1yh5mngp_82eapimhdPrfDuiYiTEJBjPnf9mh5iA3'
-deta = Deta(DETA_KEY)
+deta = Deta(os.getenv('DETA_API_KEY'))
 db = deta.Base('notes_users')
 
 def insert_user(email, username, password):
     date_joined = str(datetime.datetime.now())
     return db.put({'key': email, 'username': username, 'password': password, "date_joined": date_joined})
 
-
 def validate_email(email):
-    valid = "^[a-zA-Z0-9-_]+@[a-zA-Z0-9]+\.[a-z]{1-3}$"
+    valid = re.compile(r'([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+') 
 
-    if re.match(valid, email):
+    if re.fullmatch(valid, email):
         return True
     else:
         return False
@@ -70,8 +68,9 @@ def sign_up():
                                 if len(password1) >= 6:
                                     if password1 == password2:
                                         hashed_pw = stauth.Hasher([password2]).generate()
-                                        insert_user(email, username, hashed_pw[0])
                                         st.success("Account Creation Successful")
+                                        insert_user(email, username, hashed_pw[0])
+                                        
                                     else:
                                         st.warning("Passwords Do Not Match")
                                 else:

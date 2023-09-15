@@ -4,11 +4,12 @@ from langchain.text_splitter import CharacterTextSplitter
 from pypdf import PdfFileReader
 import qdrant_client
 import os
-from dotenv import load_dotenv
+from dotenv import main
 import streamlit as st
 import streamlit_authenticator as stauth
 from dependencies import sign_up, fetch_users, get_usernames, get_emails
 
+main.load_dotenv()
 
 def get_vector_store():
     '''
@@ -65,12 +66,32 @@ try:
 
     info, info2 = st.columns(2)
 
+    if not authentication_status:
+        sign_up()
+
     if username:
         if username in usernames:
             if authentication_status:
+                
+                st.header("Chat with your PDFs")
+                st.subheader("Query your files🔎")
+                st.text_input("Ask a question about your files")
 
-                # loading in .env variables
-                load_dotenv()  
+                # PDF Upload Area
+                with st.sidebar:
+                    st.subheader(f"{username}'s Documents")
+                    pdfs = st.file_uploader(
+                        "Upload your PDF files here", accept_multiple_files=True
+                    )
+
+                    if st.button(':blue[Process]'):
+                        with st.spinner(":green[Processing]"):
+                            raw_text = get_pdf_text(pdfs)
+                            if raw_text:
+                                st.write(raw_text)
+                                st.write('Here is the text')
+
+                # loading in .env variables 
                 OPENAI_KEY = os.getenv("OPENAI_API_KEY")            # OpenAI API key
                 QDRANT_HOST = os.getenv("QDRANT_HOST")              # Qdrant client API key
                 QDRANT_KEY = os.getenv("QDRANT_API_KEY")            # Qdrant vector store API key
@@ -90,10 +111,10 @@ try:
                     )
 
                 # create collection for vector store
-                client.recreate_collection(
-                    collection_name=VECTOR_STORE,
-                    vectors_config=vector_config
-                )
+                # client.recreate_collection(
+                #     collection_name=VECTOR_STORE,
+                #     vectors_config=vector_config
+                # )
                 
                 vector_db = get_vector_store()
 
@@ -105,24 +126,6 @@ try:
                         length_function=len
                     )
                 chunks = create_chunks(text)
-
-                st.header("Chat with your PDFs")
-                st.subheader("Query your files🔎")
-                st.text_input("Ask a question about your files")
-
-                # PDF Upload Area
-                with st.sidebar:
-                    st.subheader("Your Documents")
-                    pdfs = st.file_uploader(
-                        "Upload your PDF files here", accept_multiple_files=True
-                    )
-
-                    if st.button(':blue[Process]'):
-                        with st.spinner(":green[Processing]"):
-                            raw_text = get_pdf_text(pdfs)
-                            if raw_text:
-                                st.write(raw_text)
-                                st.write('Here is the text')
 
             elif not authentication_status:
                 with info:
