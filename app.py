@@ -1,49 +1,141 @@
 from langchain.vectorstores import Qdrant
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
-from pypdf import PdfFileReader
-import qdrant_client
-import os
 from dotenv import main
+from streamlit_tags import st_tags_sidebar, st_tags
+from pypdf import PdfReader
+
+from dependencies import sign_up, fetch_users, get_usernames, get_emails
+from vector_fn import *
+
+import qdrant_client
+from qdrant_client.http import models
+import os
 import streamlit as st
 import streamlit_authenticator as stauth
-from dependencies import sign_up, fetch_users, get_usernames, get_emails
+
 
 main.load_dotenv()
 
-def get_vector_store():
-    '''
-    get_vector_store() returns the current vector database being used to store
-    all vectorized text
-    '''
+def main(username):
+    # loading in .env variables 
+    OPENAI_KEY = os.getenv("OPENAI_API_KEY")            # OpenAI API key
+    QDRANT_HOST = os.getenv("QDRANT_HOST")              # Qdrant client API key
+    QDRANT_KEY = os.getenv("QDRANT_API_KEY")            # Qdrant vector store API key
+    DETA_KEY = os.getenv("DETA_API_KEY")                # Deta user store API key
+    DETA_PDF_KEY = os.getenv("DETA_PDF_KEY")            # Deta pdf store API key
+    VECTOR_STORE = os.getenv("QDRANT_COLLECTION_NAME")  # Qdrant collection name
+
+    # initialize qdrant client
     client = qdrant_client.QdrantClient(
         QDRANT_HOST, api_key = QDRANT_KEY
+    )
+
+    # setup vector config
+    vector_config = qdrant_client.http.models.VectorParams(
+        size=1536, 
+        distance=qdrant_client.http.models.Distance.COSINE
         )
 
-    embeddings = OpenAIEmbeddings()
-    vector_db = Qdrant(
-        client=client,
-        collection_name=VECTOR_STORE,
-        embeddings=embeddings,
+    # create collection for vector store
+    # client.recreate_collection(
+    #     collection_name=VECTOR_STORE,
+    #     vectors_config=vector_config
+    # )
+    
+    #
+    # Header and main page for search
+    #
+    st.header("Chat with your PDFs")
+    st.subheader("Query your files🔎")
+    keywords_search = st_tags(label='Search your documents by tags', maxtags=3)
+    search_tags = list(keywords_search)
+
+    user_input = st.text_input("Ask a question about your files")
+    keywords = st_tags_sidebar(label='Tag your documents', maxtags=3)
+    tags = list(keywords)
+
+    if st.button('Query'):
+        st.write('hello')
+        response = openai.Embedding.create(
+            input = user_input,
+            model='text-embedding-ada-002'
         )
 
-    return vector_db
+        embeddings = response['data'][0]['embedding']
+        st.write('embed')
+        search_result = client.search(
+            collection_name=VECTOR_STORE,
+            query_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key='user',
+                        match=models.MatchValue(
+                            value=f"{username}",
+                        ), 
+                    ),
+                    models.FieldCondition(
+                        key='tags',
+                        match=models.MatchAny(any=search_tags,
+                        ), 
+                    ),
+                ]   
+            ),
+            search_params=models.SearchParams(
+                hnsw_ef=128,
+                exact=False
+            ),
+            query_vector=embeddings,
+            limit=1
+        )
+        st.write('search db')
+        
+        prompt = "Context:\n"
+        for result in search_result:
+            prompt += result.payload['text'] + "\n---\n"
+        prompt += "Question:" + user_input + "\n---\n" + "Answer"
 
-def get_pdf_text(pdfs):
-    '''
-    get_pdf_text(pdfs) loops through all pdfs and returns the text extracted from
-    each one, concatenated together as a string.
+        completion = openai.ChatCompletion.create(
+            model = "gpt-3.5-turbo",
+            messages = [
+                {"role": "user", "content": prompt}
+            ]
+        )
 
-    pdfs->Type returned from st.file_uploader, which is ListofFiles
-    '''
-    text = ""
-    for pdf in pdfs:
-        pdf_reader = PdfFileReader(pdf)
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-    return text
+        st.write(completion.choices[0].message.content)
 
-try:
+    def insert_points(push_points):
+        operation_info = client.upsert(
+            collection_name=VECTOR_STORE,
+            wait=True,
+            points=push_points
+        )
+ 
+    #
+    #PDF Upload Area
+    #
+    with st.sidebar:
+        st.subheader(f"{username}'s Documents")
+
+        pdfs = st.file_uploader(
+            "Upload your PDF files here", accept_multiple_files=True
+        )
+
+        if st.button('Process'):
+            with st.spinner(":green[Processing]"):
+                raw_text = get_pdf_text(pdfs)
+                if raw_text:
+                    # splitting the text into chunks
+                    chunks = create_chunks(raw_text)
+                    st.write(len(chunks))
+                    # get the vector database
+                    vectors = get_embedding(chunks, username, tags)
+                    # push vectors to vector db
+                    insert_points(vectors)
+                else:
+                    st.write('No machine-readable text in file')
+
+
+if __name__=='__main__':
     # collect all current user info
     users = fetch_users()
     emails = []
@@ -60,7 +152,7 @@ try:
         creds['usernames'][usernames[index]] = {'name': emails[index], 'password': passwords[index]}
 
     # authenticate user login info
-    Authenticator = stauth.Authenticate(creds, cookie_name='Streamlit', key='abcdef', cookie_expiry_days=4)
+    Authenticator = stauth.Authenticate(creds, cookie_name='Streamlit', key='abcdef', cookie_expiry_days=0)
 
     email, authentication_status, username = Authenticator.login(":green[Login]", "main")
 
@@ -68,65 +160,11 @@ try:
 
     if not authentication_status:
         sign_up()
-
+    
     if username:
         if username in usernames:
             if authentication_status:
-                
-                st.header("Chat with your PDFs")
-                st.subheader("Query your files🔎")
-                st.text_input("Ask a question about your files")
-
-                # PDF Upload Area
-                with st.sidebar:
-                    st.subheader(f"{username}'s Documents")
-                    pdfs = st.file_uploader(
-                        "Upload your PDF files here", accept_multiple_files=True
-                    )
-
-                    if st.button(':blue[Process]'):
-                        with st.spinner(":green[Processing]"):
-                            raw_text = get_pdf_text(pdfs)
-                            if raw_text:
-                                st.write(raw_text)
-                                st.write('Here is the text')
-
-                # loading in .env variables 
-                OPENAI_KEY = os.getenv("OPENAI_API_KEY")            # OpenAI API key
-                QDRANT_HOST = os.getenv("QDRANT_HOST")              # Qdrant client API key
-                QDRANT_KEY = os.getenv("QDRANT_API_KEY")            # Qdrant vector store API key
-                DETA_KEY = os.getenv("DETA_API_KEY")                # Deta user store API key
-                DETA_PDF_KEY = os.getenv("DETA_PDF_KEY")            # Deta pdf store API key
-                VECTOR_STORE = os.getenv("QDRANT_COLLECTION_NAME")  # Qdrant collection name
-
-                # initialize qdrant client
-                client = qdrant_client.QdrantClient(
-                    QDRANT_HOST, api_key = QDRANT_KEY
-                )
-
-                # setup vector config
-                vector_config = qdrant_client.http.models.VectorParams(
-                    size=1536, 
-                    distance=qdrant_client.http.models.Distance.COSINE
-                    )
-
-                # create collection for vector store
-                # client.recreate_collection(
-                #     collection_name=VECTOR_STORE,
-                #     vectors_config=vector_config
-                # )
-                
-                vector_db = get_vector_store()
-
-                def create_chunks(text):
-                    text_splitter = CharacterTextSplitter(
-                        separator='\n',
-                        chunk_size=1000,
-                        chunk_overlap=150,
-                        length_function=len
-                    )
-                chunks = create_chunks(text)
-
+                main(username)
             elif not authentication_status:
                 with info:
                     st.error("Incorrect Username or Password")
@@ -136,21 +174,24 @@ try:
 
         else:
             st.warning("Username does not exist. Please Sign Up")
+    else:
+        st.warning('Please Enter Username')
 
 
 
-except:
-    st.success("Refresh Page")
+
+# except:
+# st.success('Refresh Page')
 
 
-# def main():
-#     load_dotenv()
-#     OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-#     QDRANT_HOST = os.getenv("QDRANT_HOST")
-#     QDRANT_KEY = os.getenv("QDRANT_API_KEY")
-#     DETA_KEY = os.getenv("DETA_API_KEY")
+    # def main():
+    #     load_dotenv()
+    #     OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+    #     QDRANT_HOST = os.getenv("QDRANT_HOST")
+    #     QDRANT_KEY = os.getenv("QDRANT_API_KEY")
+    #     DETA_KEY = os.getenv("DETA_API_KEY")
 
-#     client = qdrant_client.QdrantClient(
-#         QDRANT_HOST, QDRANT_KEY
-#     )
+    #     client = qdrant_client.QdrantClient(
+    #         QDRANT_HOST, QDRANT_KEY
+    #     )
 
