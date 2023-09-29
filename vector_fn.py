@@ -19,10 +19,16 @@ def get_pdf_text(pdfs):
     return text
 
 def create_chunks(text):
+    '''
+    create_chunks(text) applies our texsplitter to the string text that is passed
+    and returns the chunks that are formed.
+
+    text-> str
+    '''
     text_splitter = CharacterTextSplitter(
-        separator='\n',
+        separators=[" ", ",", "\n"],
         chunk_size=1000,
-        chunk_overlap=300,
+        chunk_overlap=200,
         length_function=len
     )
 
@@ -30,6 +36,15 @@ def create_chunks(text):
     return chunks
 
 def get_embedding(chunks, user_id, tags, model_id='text-embedding-ada-002'):
+    '''
+    get_embedding(chunks, user_id, tags, model_id) embeds our chunks using our desired model,
+    default being text-embedding-ada-002. 
+
+    chunks-> List(str)
+    user_id-> str
+    tags-> List(str)
+    model_id-> str
+    '''
     points = []
     for idx, chunk in enumerate(chunks):
         response = openai.Embedding.create(

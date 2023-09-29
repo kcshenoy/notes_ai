@@ -3,8 +3,9 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from dotenv import main
 from streamlit_tags import st_tags_sidebar, st_tags
 from pypdf import PdfReader
+import re
 
-from dependencies import sign_up, fetch_users, get_usernames, get_emails
+from dependencies import sign_up, fetch_users
 from vector_fn import *
 
 import qdrant_client
@@ -12,7 +13,6 @@ from qdrant_client.http import models
 import os
 import streamlit as st
 import streamlit_authenticator as stauth
-
 
 main.load_dotenv()
 
@@ -50,19 +50,21 @@ def main(username):
     keywords_search = st_tags(label='Search your documents by tags', maxtags=3)
     search_tags = list(keywords_search)
 
+    #
+    # Question input block
+    # User input
     user_input = st.text_input("Ask a question about your files")
-    keywords = st_tags_sidebar(label='Tag your documents', maxtags=3)
-    tags = list(keywords)
 
+    # Initiate Query by clicking button
     if st.button('Query'):
-        st.write('hello')
         response = openai.Embedding.create(
             input = user_input,
             model='text-embedding-ada-002'
         )
 
-        embeddings = response['data'][0]['embedding']
-        st.write('embed')
+        embeddings = response['data'][0]['embedding'] # embed user input
+
+        # search based on username and tags
         search_result = client.search(
             collection_name=VECTOR_STORE,
             query_filter=models.Filter(
@@ -70,9 +72,10 @@ def main(username):
                     models.FieldCondition(
                         key='user',
                         match=models.MatchValue(
-                            value=f"{username}",
+                            value=username,
                         ), 
-                    ),
+                    )],
+                should=[
                     models.FieldCondition(
                         key='tags',
                         match=models.MatchAny(any=search_tags,
@@ -85,9 +88,8 @@ def main(username):
                 exact=False
             ),
             query_vector=embeddings,
-            limit=1
+            limit=3
         )
-        st.write('search db')
         
         prompt = "Context:\n"
         for result in search_result:
@@ -102,20 +104,60 @@ def main(username):
         )
 
         st.write(completion.choices[0].message.content)
+ 
+    #
+    # PDF Upload and user pdf info Area
+    #
 
-    def insert_points(push_points):
-        operation_info = client.upsert(
+    with st.sidebar:
+        st.subheader(f"{username}'s Documents")
+
+        keywords = st_tags(label='Tag your documents', maxtags=3)
+        tags = list(keywords)
+
+        # Option for user to see all their previous tags to help with search
+        if st.button('See all tags'):
+            all_tags = []
+            all_points = client.scroll(
+                collection_name=VECTOR_STORE,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="user",
+                                    match=models.MatchValue(value=username)
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                with_payload=True,
+                with_vectors=False,
+            )
+
+            # display all tags to user
+            for point in all_points:
+                try:
+                    vals = point[0].payload['tags']
+                except AttributeError:
+                    continue
+                
+                for p in vals:
+                    if p not in all_tags:
+                        all_tags.append(p)
+            
+            st.write(str(all_tags))
+            
+       
+        def insert_points(push_points):
+            operation_info = client.upsert(
             collection_name=VECTOR_STORE,
             wait=True,
             points=push_points
         )
- 
-    #
-    #PDF Upload Area
-    #
-    with st.sidebar:
-        st.subheader(f"{username}'s Documents")
 
+        # PDF Upload
         pdfs = st.file_uploader(
             "Upload your PDF files here", accept_multiple_files=True
         )
@@ -136,6 +178,7 @@ def main(username):
 
 
 if __name__=='__main__':
+
     # collect all current user info
     users = fetch_users()
     emails = []
@@ -152,7 +195,7 @@ if __name__=='__main__':
         creds['usernames'][usernames[index]] = {'name': emails[index], 'password': passwords[index]}
 
     # authenticate user login info
-    Authenticator = stauth.Authenticate(creds, cookie_name='Streamlit', key='abcdef', cookie_expiry_days=0)
+    Authenticator = stauth.Authenticate(creds, cookie_name='Streamlit', key='abcdef')
 
     email, authentication_status, username = Authenticator.login(":green[Login]", "main")
 
@@ -171,27 +214,8 @@ if __name__=='__main__':
             else:
                 with info:
                     st.warning("Please provide login info")
-
         else:
             st.warning("Username does not exist. Please Sign Up")
     else:
         st.warning('Please Enter Username')
-
-
-
-
-# except:
-# st.success('Refresh Page')
-
-
-    # def main():
-    #     load_dotenv()
-    #     OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-    #     QDRANT_HOST = os.getenv("QDRANT_HOST")
-    #     QDRANT_KEY = os.getenv("QDRANT_API_KEY")
-    #     DETA_KEY = os.getenv("DETA_API_KEY")
-
-    #     client = qdrant_client.QdrantClient(
-    #         QDRANT_HOST, QDRANT_KEY
-    #     )
 

@@ -12,9 +12,9 @@ ssl._create_default_https_context = ssl._create_unverified_context
 main.load_dotenv()
 
 deta = Deta(os.getenv('DETA_API_KEY'))
-db = deta.Base('notes_users')
 
 def insert_user(email, username, password):
+    db = deta.Base('notes_users')
     date_joined = str(datetime.datetime.now())
     return db.put({'key': email, 'username': username, 'password': password, "date_joined": date_joined})
 
@@ -34,17 +34,20 @@ def validate_username(user):
         return False
 
 def fetch_users():
+    db = deta.Base('notes_users')
     users = db.fetch()
     return users.items
 
 def get_emails():
+    db = deta.Base('notes_users')
     users = db.fetch()
     emails = []
     for user in users.items:
         emails.append(user['key'])
     return emails
-    
+
 def get_usernames():
+    db = deta.Base('notes_users')
     users = db.fetch()
     usernames = []
     for user in users.items:
@@ -52,6 +55,7 @@ def get_usernames():
     return usernames
 
 def sign_up():
+    db = deta.Base('notes_users')
     with st.form(key='signup', clear_on_submit=True):
         st.subheader(':blue[Sign Up]')
         email = st.text_input(':blue[Email]', placeholder='Enter Email')
