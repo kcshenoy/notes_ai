@@ -26,7 +26,7 @@ def create_chunks(text):
     text-> str
     '''
     text_splitter = CharacterTextSplitter(
-        separators=[" ", ",", "\n"],
+        separator="\n",
         chunk_size=1000,
         chunk_overlap=200,
         length_function=len
@@ -35,7 +35,7 @@ def create_chunks(text):
     chunks = text_splitter.split_text(text)
     return chunks
 
-def get_embedding(chunks, user_id, tags, model_id='text-embedding-ada-002'):
+def get_embedding(chunks, user_id, tags, filename, model_id='text-embedding-ada-002'):
     '''
     get_embedding(chunks, user_id, tags, model_id) embeds our chunks using our desired model,
     default being text-embedding-ada-002. 
@@ -57,7 +57,7 @@ def get_embedding(chunks, user_id, tags, model_id='text-embedding-ada-002'):
 
         points.append(models.PointStruct(
             id=point_id, vector=embeddings, 
-            payload={'user': str(user_id), 'text': chunk, 'tags': tags}
+            payload={'user': str(user_id), 'text': chunk, 'tags': tags, 'filename': filename}
             ))
         
     return points

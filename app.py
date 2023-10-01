@@ -45,10 +45,53 @@ def main(username):
     #
     # Header and main page for search
     #
-    st.header("Chat with your PDFs")
+    st.title("Chat with your PDFs")
     st.subheader("Query your files🔎")
+
+    st.write("")
     keywords_search = st_tags(label='Search your documents by tags', maxtags=3)
     search_tags = list(keywords_search)
+
+    '''Files under specified tags:'''
+    if st.button('See files'):
+        files = []
+        all_files = client.scroll(
+                collection_name=VECTOR_STORE,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="user",
+                                    match=models.MatchValue(value=username)
+                                ),
+                                models.FieldCondition(
+                                    key="tags",
+                                    match=models.MatchAny(any=search_tags), 
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                with_payload=True,
+                with_vectors=False,
+            )
+
+            # display all tags to user
+        if all_files[0]:
+            for file in all_files:
+                try:
+                    vals = file[0].payload['filename']
+                except AttributeError:
+                    continue
+                
+                for p in vals:
+                    if p not in files:
+                        files.append(p)
+            
+            st.write(str(files))
+        elif not all_files[0]:
+            st.write('No files under specified tags. See all tags or upload new file in the sidebar.')
 
     #
     # Question input block
@@ -109,14 +152,23 @@ def main(username):
     # PDF Upload and user pdf info Area
     #
 
-    with st.sidebar:
+    with st.sidebar:            
+        def insert_points(push_points):
+            operation_info = client.upsert(
+            collection_name=VECTOR_STORE,
+            wait=True,
+            points=push_points
+        )
+            
         st.subheader(f"{username}'s Documents")
 
-        keywords = st_tags(label='Tag your documents', maxtags=3)
-        tags = list(keywords)
+        # PDF Upload
+        pdfs = st.file_uploader(
+            "Upload your PDF files here", accept_multiple_files=True
+        )
 
-        # Option for user to see all their previous tags to help with search
-        if st.button('See all tags'):
+         # Option for user to see all their previous tags to help with search
+        if st.button(':blue[See all your tags]'):
             all_tags = []
             all_points = client.scroll(
                 collection_name=VECTOR_STORE,
@@ -137,46 +189,45 @@ def main(username):
             )
 
             # display all tags to user
-            for point in all_points:
-                try:
-                    vals = point[0].payload['tags']
-                except AttributeError:
-                    continue
+            if all_points[0]:
+                st.write(all_points)
+                for point in all_points:
+                    try:
+                        vals = point[0].payload['tags']
+                    except AttributeError:
+                        continue
+                    
+                    for p in vals:
+                        if p not in all_tags:
+                            all_tags.append(p)
                 
-                for p in vals:
-                    if p not in all_tags:
-                        all_tags.append(p)
-            
-            st.write(str(all_tags))
-            
-       
-        def insert_points(push_points):
-            operation_info = client.upsert(
-            collection_name=VECTOR_STORE,
-            wait=True,
-            points=push_points
-        )
+                st.write(str(all_tags))
+        
+        '''
+        '''
 
-        # PDF Upload
-        pdfs = st.file_uploader(
-            "Upload your PDF files here", accept_multiple_files=True
-        )
+        keywords = st_tags(label='Tag your documents', maxtags=3)
+        tags = list(keywords)
 
         if st.button('Process'):
             with st.spinner(":green[Processing]"):
-                raw_text = get_pdf_text(pdfs)
-                if raw_text:
-                    # splitting the text into chunks
-                    chunks = create_chunks(raw_text)
-                    st.write(len(chunks))
-                    # get the vector database
-                    vectors = get_embedding(chunks, username, tags)
-                    # push vectors to vector db
-                    insert_points(vectors)
-                else:
-                    st.write('No machine-readable text in file')
+                for p in pdfs:
+                    raw_text = get_pdf_text(pdfs)
+                    if raw_text:
+                        # splitting the text into chunks
+                        chunks, filename = create_chunks(raw_text, p.name)
+                        for p in pdfs:
+                            st.write(p.name)
+                        # get the vector database
+                        vectors = get_embedding(chunks, username, tags, filename)
+                        # push vectors to vector db
+                        insert_points(vectors)
+                    else:
+                        st.write('No machine-readable text in file')
+        
 
 
+# Main function to run app:
 if __name__=='__main__':
 
     # collect all current user info
