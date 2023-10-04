@@ -47,7 +47,6 @@ def main(username):
     # Header and main page for search
     #
     st.title("Chat with your PDFs")
-    st.subheader("Query your files🔎")
 
     st.write("")
     keywords_search = st_tags(label='Search your documents by tags', maxtags=3)
@@ -82,22 +81,25 @@ def main(username):
         if all_files[0]:
             for file in all_files:
                 try:
-                    vals = file[0].payload['filename']
+                    val = file[0].payload['filename']
                 except AttributeError:
                     continue
                 
-                for p in vals:
-                    if p not in files:
-                        files.append(p)
-            
+                if val not in files:
+                    files.append(val)
             st.write(str(files))
+
         elif not all_files[0]:
             st.write('No files under specified tags. See all tags or upload new file in the sidebar.')
 
     #
     # Question input block
+
+    specify_file = st.text_input("Specify a file you would like to search. Paste a file name from above.")
+
     # User input
-    user_input = st.text_input("Ask a question about your files")
+    st.subheader("Query your files🔎")
+    user_input = st.text_input("User Input")
 
     # Initiate Query by clicking button
     if st.button('Query'):
@@ -118,7 +120,14 @@ def main(username):
                         match=models.MatchValue(
                             value=username,
                         ), 
-                    )],
+                    ),
+                    models.FieldCondition(
+                        key='filename',
+                        match=models.MatchValue(
+                            value=specify_file,
+                        ), 
+                    )    
+                ],
                 should=[
                     models.FieldCondition(
                         key='tags',
