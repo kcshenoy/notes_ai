@@ -191,7 +191,6 @@ def main(username):
 
             # display all tags to user
             if all_points[0]:
-                st.write(all_points)
                 for point in all_points:
                     try:
                         vals = point[0].payload['tags']
