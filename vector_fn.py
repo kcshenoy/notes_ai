@@ -18,7 +18,7 @@ def get_pdf_text(pdfs):
             text += page.extract_text()
     return text
 
-def create_chunks(text):
+def create_chunks(text, filename):
     '''
     create_chunks(text) applies our texsplitter to the string text that is passed
     and returns the chunks that are formed.
@@ -33,7 +33,7 @@ def create_chunks(text):
     )
 
     chunks = text_splitter.split_text(text)
-    return chunks
+    return (chunks, filename)
 
 def get_embedding(chunks, user_id, tags, filename, model_id='text-embedding-ada-002'):
     '''
